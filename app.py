@@ -292,12 +292,37 @@ def display_metrics(processor, balances, returns_data):
 
 def format_risk_metrics(df):
     """Format risk metrics with consistent styling."""
-    return df.style.apply(lambda x: [
-        'background-color: var(--card-bg); padding: 1rem !important; font-weight: 500;' 
-        if i == 0 else 
-        'background-color: var(--card-bg); padding: 1rem !important;' 
-        for i in range(len(x))
-    ], axis=1)
+    return df.style.format({
+        'Value': lambda x: f'{x:.2%}' if isinstance(x, float) and x < 10 else f'{x:.2f}'  # Beta formatted as decimal
+    }).set_table_styles([
+        {
+            'selector': 'th',
+            'props': [
+                ('background-color', '#004F2F !important'),
+                ('color', 'white !important'),
+                ('font-size', '16px'),
+                ('font-weight', 'bold'),
+                ('text-align', 'left'),
+                ('padding', '10px'),
+                ('border-bottom', '2px solid #1E3932'),
+            ]
+        },
+        {
+            'selector': 'td',
+            'props': [
+                ('padding', '10px'),
+                ('border-bottom', '1px solid #e0e0e0'),
+                ('text-align', 'right'),
+            ]
+        },
+        {
+            'selector': 'tbody tr:nth-child(even) td',
+            'props': [
+                ('background-color', '#F8F8F8'),
+            ]
+        }
+    ])
+
 
 def display_risk_metrics(risk_metrics):
     """Display risk metrics with enhanced styling."""
