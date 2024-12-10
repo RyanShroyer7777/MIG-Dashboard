@@ -230,7 +230,7 @@ class DataProcessor:
             # Calculate beta using linear regression
             reg = LinearRegression()
             reg.fit(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
-            beta = reg.coef_[0]
+            beta = reg.coef_[0] / 100  # Scale beta to be in decimal form if necessary
             alpha = reg.intercept_ * 252  # Annualize alpha
             r_squared = reg.score(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
     
@@ -257,7 +257,7 @@ class DataProcessor:
             # Return all calculated metrics
             return {
                 'alpha': alpha,
-                'beta': beta,
+                'beta': beta,  # Beta is now correctly scaled
                 'tracking_error': tracking_errors,
                 'r_squared': r_squared
             }
@@ -270,3 +270,4 @@ class DataProcessor:
                 'tracking_error': {'weekly': None, 'monthly': None, 'fytd': None},
                 'r_squared': {'weekly': None, 'monthly': None, 'fytd': None}
             }
+    
