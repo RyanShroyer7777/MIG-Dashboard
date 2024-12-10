@@ -270,3 +270,7 @@ class DataProcessor:
                 'tracking_error': {'weekly': None, 'monthly': None, 'fytd': None},
                 'r_squared': {'weekly': None, 'monthly': None, 'fytd': None}
             }
+
+                'tracking_error': {'weekly': None, 'monthly': None, 'fytd': None},
+                'r_squared': {'weekly': None, 'monthly': None, 'fytd': None}
+            }
