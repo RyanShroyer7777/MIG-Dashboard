@@ -83,15 +83,29 @@ def plot_cumulative_returns(data: pd.DataFrame):
 def create_allocation_pie(holdings: pd.DataFrame, prices: pd.DataFrame, cash_balance: float):
     allocation = calculate_portfolio_allocation(holdings, prices, cash_balance)
     colors = px.colors.qualitative.Set3[:len(allocation)]
+    
     fig = go.Figure(data=[go.Pie(
         labels=allocation['stock_symbol'],
         values=allocation['market_value'],
         hole=.4,
         marker=dict(colors=colors),
         textinfo='label+percent',
-        textposition='outside'
+        textposition='outside',
+        # Add these parameters to improve visibility
+        textfont=dict(size=12),
+        showlegend=False
     )])
-    fig.update_layout(height=400, margin=dict(l=20, r=20, t=20, b=20))
+    
+    # Adjust layout to show full chart
+    fig.update_layout(
+        height=400,  # You can adjust this value
+        margin=dict(l=60, r=60, t=30, b=30),  # Increased margins
+        autosize=True,  # Ensures the chart responds to container size
+        # Add padding around the pie chart
+        xaxis=dict(automargin=True),
+        yaxis=dict(automargin=True)
+    )
+    
     st.plotly_chart(fig, use_container_width=True)
 
 
