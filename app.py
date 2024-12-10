@@ -37,16 +37,20 @@ def init_page():
         layout="wide",
         initial_sidebar_state="collapsed"
     )
-    st.markdown(apply_custom_style(), unsafe_allow_html=True)
-    st.markdown(
-        '''
-        <div class="custom-header">
-            <h1>UO Masters Investment Group</h1>
-            <p>Portfolio Analytics Dashboard</p>
-        </div>
-        ''',
-        unsafe_allow_html=True
-    )
+    
+    # Add a container for the title and logo
+    with st.container():
+        col1, col2 = st.columns([4, 1])  # Adjust the ratio to fit the title and logo proportionally
+        with col1:
+            st.markdown("""
+            <div class="custom-header">
+                <h1>UO Masters Investment Group</h1>
+                <p>Portfolio Analytics Dashboard</p>
+            </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.image("uo_logo.jpg", width=100)  # Resize the logo to fit better
+
 
 def plot_cumulative_returns(data: pd.DataFrame):
     st.markdown("## Portfolio Returns: DADCO & IVV", unsafe_allow_html=True)
@@ -183,10 +187,10 @@ def main():
         with tab2:
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.subheader("Portfolio Allocation")
+                st.markdown("### Current Allocation of Portfolio Including Cash")
                 create_allocation_pie(holdings, prices, processor.cash_balance)
             with col2:
-                st.subheader("Holdings Details")
+                st.markdown("### Detailed Breakdown of Holdings")
                 display_holdings_table(holdings, equity_returns, prices)
                 
             st.subheader("Performance Highlights")
@@ -212,3 +216,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
