@@ -165,11 +165,9 @@ def main():
         
         with tab1:
             st.subheader("Cumulative Returns")
-            st.markdown("### Portfolio vs. Benchmark")
             plot_cumulative_returns(returns_data['fytd'])
             
             st.subheader("Performance Summary")
-            st.markdown("### Summary of Portfolio and Benchmark Returns")
             perf_data = pd.DataFrame({
                 'Period': ['Weekly', 'Monthly', 'FYTD'],
                 'Portfolio': [returns_data[p.lower()]['PORTFOLIO'].iloc[-1] for p in ['weekly', 'monthly', 'fytd']],
@@ -187,20 +185,16 @@ def main():
             col1, col2 = st.columns([1, 2])
             with col1:
                 st.subheader("Portfolio Allocation")
-                st.markdown("### Current Allocation of Portfolio Including Cash")
                 create_allocation_pie(holdings, prices, processor.cash_balance)
             with col2:
                 st.subheader("Holdings Details")
-                st.markdown("### Detailed Breakdown of Holdings")
                 display_holdings_table(holdings, equity_returns, prices)
                 
             st.subheader("Performance Highlights")
-            st.markdown("### Top and Bottom Performing Equities")
             display_top_bottom_performers(equity_returns)
 
         with tab3:
             st.subheader("Risk Analytics")
-            st.markdown("### Risk Metrics Overview")
             risk_data = pd.DataFrame({
                 'Metric': ['Alpha (Annual)', 'Beta', 'Tracking Error (FYTD)'],
                 'Value': [
