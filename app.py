@@ -164,7 +164,6 @@ def main():
         tab1, tab2, tab3 = st.tabs(["Performance", "Holdings", "Risk Analysis"])
         
         with tab1:
-            st.subheader("Cumulative Returns")
             plot_cumulative_returns(returns_data['fytd'])
             
             st.subheader("Performance Summary")
