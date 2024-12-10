@@ -6,6 +6,7 @@ from processor import DataProcessor
 from database import DatabaseInterface
 import traceback
 
+
 class CacheConfig:
     """Configuration for cache TTLs."""
     DB_CACHE_TTL = 7 * 24 * 3600  # 1 week for raw database queries
@@ -205,3 +206,4 @@ class CachedDatabaseInterface:
             'next_db_update': st.session_state[CacheConfig.LAST_DB_UPDATE] + timedelta(seconds=CacheConfig.DB_CACHE_TTL),
             'next_processed_update': st.session_state[CacheConfig.LAST_PROCESSED_UPDATE] + timedelta(seconds=CacheConfig.PROCESSED_CACHE_TTL)
         }
+
