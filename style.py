@@ -209,4 +209,3 @@ def format_risk_metrics(df):
             ]
         }
     ])
-
