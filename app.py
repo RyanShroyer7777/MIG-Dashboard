@@ -6,7 +6,6 @@ from datetime import datetime, date, timedelta
 import numpy as np
 import traceback
 from style import apply_custom_style, format_performance_table, format_holdings_table
-
 # Page configuration must be the first Streamlit command
 st.set_page_config(
     page_title="UO MIG Portfolio Analytics",
@@ -37,7 +36,7 @@ def init_database():
             st.code(traceback.format_exc())
         return None
 
-def init_page():
+def init_page(latest_date: pd.Timestamp):
     """Initialize the Streamlit page with custom styling."""
     st.markdown(apply_custom_style(), unsafe_allow_html=True)
     
@@ -50,6 +49,8 @@ def init_page():
             <p>Portfolio Analytics Dashboard</p>
         </div>
         """, unsafe_allow_html=True)
+        # Add last updated timestamp below title - now only showing the date
+        st.markdown(f"<p style='color: #666; font-size: 0.9em; margin-top: -0.5em;'>Last Updated: {latest_date.strftime('%B %d, %Y')}</p>", unsafe_allow_html=True)
     with col2:
         st.image("uo_logo.jpg", width=80)
 
@@ -204,67 +205,96 @@ def display_holdings_table(holdings: pd.DataFrame, returns: pd.DataFrame, prices
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 def display_top_bottom_performers(returns: pd.DataFrame):
-    """Display top and bottom performing stocks."""
-    metric = 'weekly_return'
+    """
+    Display top and bottom performing stocks with period selection.
+    Bottom performers are sorted with worst performers (most negative returns) at the top.
     
+    Args:
+        returns (pd.DataFrame): DataFrame containing return data with columns:
+            - stock_symbol
+            - weekly_return
+            - monthly_return
+            - fytd_return
+    """
+    # Add period selector
+    period = st.radio(
+        "Select Performance Period:",
+        options=["Weekly", "Monthly", "FYTD"],
+        horizontal=True,
+        key="performers_period_selector"
+    )
+    
+    # Map selected period to column name
+    metric_map = {
+        "Weekly": "weekly_return",
+        "Monthly": "monthly_return",
+        "FYTD": "fytd_return"
+    }
+    metric = metric_map[period]
+    
+    # Make sure we're working with numeric values
+    returns[metric] = pd.to_numeric(returns[metric], errors='coerce')
+    
+    # Sort the returns - descending for top performers, ascending for bottom performers
     top_performers = returns.nlargest(5, metric)
-    bottom_performers = returns.nsmallest(5, metric)
+    bottom_performers = returns.nsmallest(5, metric)  # Changed from tail(5) to nsmallest(5)
     
-    top_df = (
-        top_performers[['stock_symbol', metric]]
-        .rename(columns={
-            'stock_symbol': 'Symbol',
-            metric: 'Weekly Return'
-        })
-    )
+    # Create display dataframes
+    top_df = top_performers[['stock_symbol', metric]].copy()
+    bottom_df = bottom_performers[['stock_symbol', metric]].copy()
     
-    bottom_df = (
-        bottom_performers[['stock_symbol', metric]]
-        .rename(columns={
-            'stock_symbol': 'Symbol',
-            metric: 'Weekly Return'
-        })
-    )
+    # Rename columns
+    column_rename = {
+        'stock_symbol': 'Symbol',
+        metric: f'{period} Return'
+    }
     
-    top_styled = top_df.style.format({
-        'Weekly Return': '{:+.2%}'
-    }).applymap(
-        lambda x: 'color: #0C9B6A' if isinstance(x, float) and x > 0 else 'color: #DC2626',
-        subset=['Weekly Return']
-    ).set_table_styles([{
-        'selector': 'th',
-        'props': [
-            ('background-color', '#1A2B32'),
-            ('color', 'white'),
-            ('font-weight', '600'),
-            ('text-align', 'left'),
-            ('padding', '1rem'),
-            ('border-bottom', '3px solid #FEE123')
-        ]
-    }])
+    top_df.rename(columns=column_rename, inplace=True)
+    bottom_df.rename(columns=column_rename, inplace=True)
     
-    bottom_styled = bottom_df.style.format({
-        'Weekly Return': '{:+.2%}'
-    }).applymap(
-        lambda x: 'color: #0C9B6A' if isinstance(x, float) and x > 0 else 'color: #DC2626',
-        subset=['Weekly Return']
-    ).set_table_styles([{
-        'selector': 'th',
-        'props': [
-            ('background-color', '#1A2B32'),
-            ('color', 'white'),
-            ('font-weight', '600'),
-            ('text-align', 'left'),
-            ('padding', '1rem'),
-            ('border-bottom', '3px solid #FEE123')
-        ]
-    }])
+    # Style the dataframes
+    def style_dataframe(df):
+        return df.style.format({
+            f'{period} Return': '{:+.2%}'
+        }).applymap(
+            lambda x: 'color: #0C9B6A' if isinstance(x, float) and x > 0 else 'color: #DC2626',
+            subset=[f'{period} Return']
+        ).set_table_styles([{
+            'selector': 'th',
+            'props': [
+                ('background-color', '#1A2B32'),
+                ('color', 'white'),
+                ('font-weight', '600'),
+                ('text-align', 'left'),
+                ('padding', '1rem'),
+                ('border-bottom', '3px solid #FEE123')
+            ]
+        }])
     
-    st.markdown("### Top 5 Performers")
-    st.dataframe(top_styled, use_container_width=True, hide_index=True)
+    # Apply styling
+    top_styled = style_dataframe(top_df)
+    bottom_styled = style_dataframe(bottom_df)
     
-    st.markdown("### Bottom 5 Performers")
-    st.dataframe(bottom_styled, use_container_width=True, hide_index=True)
+    # Create two columns for display
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"### Top 5 {period} Performers")
+        st.dataframe(
+            top_styled,
+            use_container_width=True,
+            hide_index=True
+        )
+    
+    with col2:
+        st.markdown(f"### Bottom 5 {period} Performers")
+        st.dataframe(
+            bottom_styled,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        
 def display_metrics(processor, balances, returns_data):
     """Display enhanced metric cards."""
     latest_total = balances['total_portfolio_value'].iloc[-1]
@@ -289,98 +319,104 @@ def display_metrics(processor, balances, returns_data):
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-def format_risk_metrics(df):
-    """Format risk metrics with consistent styling."""
-    return df.style.format({
-        'Value': lambda x: f'{x:.2%}' if isinstance(x, float) and x < 10 else f'{x:.2f}'  # Beta formatted as decimal
-    }).set_table_styles([
-        {
-            'selector': 'th',
-            'props': [
-                ('background-color', '#004F2F !important'),
-                ('color', 'white !important'),
-                ('font-size', '16px'),
-                ('font-weight', 'bold'),
-                ('text-align', 'left'),
-                ('padding', '10px'),
-                ('border-bottom', '2px solid #1E3932'),
-            ]
-        },
-        {
-            'selector': 'td',
-            'props': [
-                ('padding', '10px'),
-                ('border-bottom', '1px solid #e0e0e0'),
-                ('text-align', 'right'),
-            ]
-        },
-        {
-            'selector': 'tbody tr:nth-child(even) td',
-            'props': [
-                ('background-color', '#F8F8F8'),
-            ]
-        }
-    ])
-
-
-def display_risk_metrics(risk_metrics):
-    """Display risk metrics with enhanced styling."""
-    st.markdown("### Risk Analysis")
+def display_risk_metrics(risk_metrics: dict):
+    """
+    Display risk metrics in a clean table format with descriptions.
     
-    # Create DataFrame with proper formatting
-    risk_data = pd.DataFrame({
-        'Metric': ['Alpha (Annual)', 'Beta', 'Tracking Error (FYTD)'],
-        'Value': [
-            risk_metrics['alpha'],  # Keep numeric for proper formatting
-            risk_metrics['beta'], 
-            risk_metrics['tracking_error']['fytd']
-        ]
-    })
-
-    # Force clean formatting with proper sizing
-    styled_risk_data = risk_data.style.format({
-        'Value': '{:.2%}'  # Formats numeric values as percentages
-    }).set_table_styles([
-        {
-            'selector': 'th',
-            'props': [
-                ('background-color', '#004F2F !important'),  # Dark green header
-                ('color', 'white !important'),              # White text
-                ('font-size', '16px'),                      # Larger font
-                ('font-weight', 'bold'),                    # Bold text
-                ('text-align', 'left'),                     # Align left
-                ('padding', '10px'),                        # Add padding
-                ('border-bottom', '2px solid #1E3932'),     # Border below header
-            ]
-        },
-        {
-            'selector': 'td',
-            'props': [
-                ('padding', '10px'),
-                ('border-bottom', '1px solid #e0e0e0'),     # Light row borders
-                ('text-align', 'right'),                   # Right-align values
-            ]
-        },
-        {
-            'selector': 'tbody tr:nth-child(even) td',
-            'props': [
-                ('background-color', '#F8F8F8'),            # Alternating row background
+    Args:
+        risk_metrics (dict): Dictionary containing risk metrics
+    """
+    try:
+        # Create metrics data
+        metrics_data = {
+            'Metric': [
+                'Sharpe Ratio (FYTD)',
+                'Market-Adjusted Alpha (Annual)',
+                'Raw Alpha (Annual)',
+                'Rolling Beta',
+                'Tracking Error (FYTD)',
+                'Treynor Ratio (FYTD)'
+            ],
+            'Value': [
+                risk_metrics.get("sharpe", {}).get("fytd", None),
+                risk_metrics.get("alpha", None),
+                risk_metrics.get("raw_alpha", None),
+                risk_metrics.get("beta", None),
+                risk_metrics.get("tracking_error", {}).get("fytd", None),
+                risk_metrics.get("treynor", {}).get("fytd", None)
+            ],
+            'Description': [
+                'Risk-adjusted return metric measuring excess return per unit of risk using standard deviation.',
+                'Portfolio\'s excess return after adjusting for market risk premium and beta.',
+                'Simple excess return over risk-free rate without market adjustment.',
+                'Measures portfolio sensitivity to market movements. Beta > 1 indicates higher market sensitivity.',
+                'Measures how consistently the portfolio follows its benchmark. Lower values indicate closer benchmark tracking.',
+                'Excess return per unit of systematic risk (beta).'
             ]
         }
-    ])
-
-    # Display the table
-    st.dataframe(
-        styled_risk_data, 
-        use_container_width=True, 
-        height=200,  # Explicitly set height to avoid excess space
-        hide_index=True
-    )
-
-
+        
+        df = pd.DataFrame(metrics_data)
+        
+        # Format the values with consistent decimal places
+        formatted_values = []
+        for metric, value in zip(df['Metric'], df['Value']):
+            if value is None:
+                formatted_values.append('N/A')
+            elif 'Alpha' in metric or 'Tracking Error' in metric:
+                formatted_values.append(f'{value:+.2%}')  # Always show 2 decimal places for percentages
+            elif 'Beta' in metric:
+                formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for Beta
+            elif 'Ratio' in metric:  # For Sharpe and Treynor ratios
+                formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for ratios
+            else:
+                formatted_values.append(f'{value:.2f}')
+        
+        df['Value'] = formatted_values
+        
+        # Create styled table
+        styled_df = df.style.set_table_styles([
+            {
+                'selector': 'th',
+                'props': [
+                    ('background-color', '#004F2F'),
+                    ('color', 'white'),
+                    ('font-weight', 'bold'),
+                    ('padding', '12px 15px'),
+                    ('text-align', 'left'),
+                    ('border-bottom', '3px solid #FEE123')
+                ]
+            },
+            {
+                'selector': 'td',
+                'props': [
+                    ('padding', '12px 15px'),
+                    ('border-bottom', '1px solid #e0e0e0')
+                ]
+            },
+            {
+                'selector': 'td:nth-child(2)',  # Style the Value column
+                'props': [
+                    ('text-align', 'center'),
+                    ('font-family', 'monospace')  # For better alignment of numbers
+                ]
+            }
+        ]).apply(lambda x: [
+            'background-color: #f8f9fa' if i % 2 == 0 else '' 
+            for i in range(len(x))
+        ], axis=0)
+        
+        # Display the styled table
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+    except Exception as e:
+        st.error("An error occurred while displaying risk metrics.")
+        if st.checkbox("Show detailed error message"):
+            st.code(traceback.format_exc())
 def main():
-    init_page()
     try:
         cached_db = init_database()
         if cached_db is None:
@@ -394,8 +430,15 @@ def main():
             if processor is None:
                 st.error("Failed to initialize data processor.")
                 return
+                
+            # Get latest date from processor
+            latest_date = processor.daily_returns['return_date'].max()
+            
+            # Initialize page with latest date
+            init_page(latest_date)
 
             risk_metrics = processor.calculate_risk_metrics(fiscal_start_date)
+            sharpe_ratio = processor.calculate_sharpe_ratio(fiscal_start_date)
             returns_data = processor.calculate_cumulative_returns(fiscal_start_date)
             holdings = processor.holdings
             prices = processor.stock_prices
@@ -441,7 +484,7 @@ def main():
         # Tabs for the rest of the content
         tabs = st.tabs(["Performance", "Holdings", "Risk Analysis"])
 
-        # Holdings Tab
+        #Holdings tab 
         with tabs[1]:
             col3, col4 = st.columns([1, 2])
             with col3:
@@ -455,11 +498,9 @@ def main():
                 st.markdown("### Holdings Detail")
                 display_holdings_table(holdings, equity_returns, prices)
             
-            # Add performers section under the main holdings content
+            # Performance Analysis section with new switchable display
             st.markdown("### Performance Analysis")
-            col5, col6 = st.columns(2)
-            with col5:
-                display_top_bottom_performers(equity_returns)
+            display_top_bottom_performers(equity_returns)
 
         # Performance Tab
         with tabs[0]:
@@ -491,7 +532,20 @@ def main():
 
         # Risk Analysis Tab
         with tabs[2]:
-            display_risk_metrics(risk_metrics)
+            st.markdown("### Risk Metrics Overview")
+            
+            # Get all risk metrics
+            risk_metrics = processor.calculate_risk_metrics(fiscal_start_date)
+            sharpe_metrics = processor.calculate_sharpe_ratio(fiscal_start_date)
+            
+            # Combine all metrics
+            combined_metrics = {
+                **risk_metrics,
+                **sharpe_metrics
+            }
+            
+            # Display risk metrics using the updated function - remove latest_date parameter
+            display_risk_metrics(combined_metrics)
 
     except Exception as e:
         st.error("An unexpected error occurred.")
