@@ -331,7 +331,7 @@ def display_risk_metrics(risk_metrics: dict):
         metrics_data = {
             'Metric': [
                 'Sharpe Ratio (FYTD)',
-                'Market-Adjusted Alpha (Annual)',
+                'CAPM Alpha (Annual)',
                 'Raw Alpha (Annual)',
                 'Rolling Beta',
                 'Tracking Error (FYTD)',
