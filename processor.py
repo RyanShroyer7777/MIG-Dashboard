@@ -2,11 +2,12 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Tuple, Dict
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
+import traceback
 
 # Set up logging
 logging.basicConfig(
@@ -23,10 +24,10 @@ class DataProcessor:
         risk_free_rates: pd.DataFrame,
         stock_prices: pd.DataFrame,
         fund_id: str,
-        cash_balance: float  # Add cash_balance as an argument
+        cash_balance: float
     ):
         self.fund_id = fund_id
-        self.cash_balance = max(cash_balance, 0)  # Store cash balance
+        self.cash_balance = max(cash_balance, 0)
 
         # Convert date columns to datetime
         daily_returns['return_date'] = pd.to_datetime(daily_returns['return_date'])
@@ -45,9 +46,6 @@ class DataProcessor:
         self._validate_data()
 
     def _validate_data(self) -> None:
-        """
-        Validate that all required columns and data are present.
-        """
         required_columns = {
             'daily_returns': ['return_date', 'return_value', 'source', 'fund_id'],
             'stock_daily_returns': ['return_date', 'return_value', 'stock_symbol'],
@@ -87,22 +85,34 @@ class DataProcessor:
         """
         Calculate cumulative returns for each stock (weekly, monthly, FYTD).
         """
-        today = pd.Timestamp.now().normalize()
+        latest_date = self.stock_daily_returns['return_date'].max()
+
         periods = {
-            "weekly": today - pd.Timedelta(days=7),
-            "monthly": today - pd.Timedelta(days=30),
+            "weekly": latest_date - pd.Timedelta(days=7),
+            "monthly": latest_date - pd.Timedelta(days=30),
             "fytd": pd.Timestamp(fiscal_start_date)
         }
+
         results = []
         for stock in self.holdings['stock_symbol']:
             stock_data = self.stock_daily_returns[self.stock_daily_returns['stock_symbol'] == stock]
             stock_results = {"stock_symbol": stock}
+
             for period, start_date in periods.items():
-                filtered = stock_data[stock_data['return_date'] >= start_date]
-                cumulative_return = (1 + filtered['return_value']).prod() - 1 if not filtered.empty else 0
+                period_data = stock_data[(stock_data['return_date'] >= start_date) &
+                                         (stock_data['return_date'] <= latest_date)]
+
+                cumulative_return = (1 + period_data['return_value']).prod() - 1 if not period_data.empty else 0
                 stock_results[f"{period}_return"] = cumulative_return
+
             results.append(stock_results)
+
         return pd.DataFrame(results)
+
+
+
+
+
 
     def calculate_tracking_error(self, fiscal_start_date: str) -> dict:
         """
@@ -133,7 +143,125 @@ class DataProcessor:
 
         return tracking_errors
 
+    def _get_latest_risk_free_rate(self) -> tuple[float, float]:
+        try:
+            if self.risk_free_rates.empty:
+                logging.warning("No risk-free rates available, using 0")
+                return 0.0, 0.0
+                
+            latest_rate = (
+                self.risk_free_rates
+                .sort_values('date', ascending=False)
+                .iloc[0]['rate']
+            )
+            
+            annual_rate = latest_rate  # Remove the /100
+            daily_rate = (1 + annual_rate) ** (1/252) - 1
+            
+            return annual_rate, daily_rate
+            
+        except Exception as e:
+            logging.error(f"Error getting risk-free rate: {str(e)}")
+            return 0.0, 0.0
     
+    def calculate_risk_metrics(self, fiscal_start_date: str) -> dict:
+        """Calculate FYTD risk metrics."""
+        try:
+            annual_rf_rate, daily_rf_rate = self._get_latest_risk_free_rate()
+            
+            returns = self.daily_returns.pivot(
+                index='return_date',
+                columns='source',
+                values='return_value'
+            ).fillna(0)
+            
+            portfolio_returns = returns['PORTFOLIO']
+            benchmark_returns = returns['BENCHMARK']
+            
+            excess_portfolio = portfolio_returns - daily_rf_rate
+            excess_benchmark = benchmark_returns - daily_rf_rate
+            
+            # Current market-adjusted alpha calculation
+            reg = LinearRegression()
+            reg.fit(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
+            beta = reg.coef_[0]
+            market_alpha = reg.intercept_ * 252
+            
+            # Raw alpha calculation (just portfolio excess return)
+            # Annualize both returns first
+            ann_portfolio_return = (1 + portfolio_returns.mean()) ** 252 - 1
+            raw_alpha = ann_portfolio_return - annual_rf_rate
+            
+            # Convert raw_alpha to match scaling of other metrics
+            raw_alpha = raw_alpha / 10  # Adjust the scaling to match other metrics
+            
+            tracking_error = (
+                (portfolio_returns - benchmark_returns).std() * np.sqrt(252)
+                if len(portfolio_returns) > 1 else 0
+            )
+            
+            return {
+                'alpha': market_alpha,
+                'raw_alpha': raw_alpha,
+                'beta': beta,
+                'tracking_error': {'fytd': tracking_error},
+                'r_squared': reg.score(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
+            }
+        except Exception as e:
+            logging.error(f"Error in calculate_risk_metrics: {str(e)}")
+            return {
+                'alpha': 0,
+                'raw_alpha': 0,
+                'beta': 0,
+                'tracking_error': {'fytd': 0},
+                'r_squared': 0
+            }
+    def calculate_sharpe_ratio(self, fiscal_start_date: date) -> dict:
+        """
+        Calculate Sharpe ratio (risk-adjusted returns metric)
+        """
+        try:
+            # Get risk-free rate and portfolio data
+            annual_rf_rate, daily_rf_rate = self._get_latest_risk_free_rate()
+            fiscal_start = pd.Timestamp(fiscal_start_date)
+            
+            portfolio_data = self.daily_returns[
+                (self.daily_returns['source'] == 'PORTFOLIO') & 
+                (self.daily_returns['return_date'] >= fiscal_start)
+            ]
+            
+            if portfolio_data.empty:
+                return {
+                    'sharpe': {'fytd': None},
+                    'treynor': {'fytd': None}
+                }
+                
+            # Calculate returns
+            portfolio_returns = portfolio_data['return_value']
+            excess_returns = portfolio_returns - daily_rf_rate
+            
+            # Sharpe Ratio
+            sharpe = (
+                excess_returns.mean() / excess_returns.std() * np.sqrt(252)
+                if excess_returns.std() > 0 else None
+            )
+            
+            # Treynor ratio
+            risk_metrics = self.calculate_risk_metrics(fiscal_start_date)
+            beta = risk_metrics['beta']
+            treynor_ratio = (excess_returns.mean() * 252) / beta if beta != 0 else None
+    
+            return {
+                'sharpe': {'fytd': sharpe},
+                'treynor': {'fytd': treynor_ratio}
+            }
+            
+        except Exception as e:
+            logging.error(f"Error calculating risk metrics: {str(e)}")
+            return {
+                'sharpe': {'fytd': None},
+                'treynor': {'fytd': None}
+            }
     def calculate_cumulative_returns(self, fiscal_start_date: str) -> dict:
         """
         Calculate cumulative returns for weekly, monthly, and fiscal YTD periods.
@@ -190,84 +318,3 @@ class DataProcessor:
                 continue
     
         return results
-
-
-
-
-
-    def calculate_risk_metrics(self, fiscal_start_date: str) -> dict:
-        """
-        Calculate comprehensive risk metrics including alpha, beta, and tracking error.
-    
-        Args:
-            fiscal_start_date (str): Start date for fiscal year calculations (format: YYYY-MM-DD).
-    
-        Returns:
-            dict: Dictionary containing risk metrics (alpha, beta, tracking error, R-squared).
-        """
-        try:
-            # Convert fiscal_start_date to datetime if not already
-            fiscal_start_date = pd.to_datetime(fiscal_start_date)
-    
-            # Pivot daily returns to separate portfolio and benchmark
-            returns = self.daily_returns.pivot(
-                index='return_date',
-                columns='source',
-                values='return_value'
-            ).dropna()
-    
-            # Extract portfolio and benchmark returns
-            portfolio_returns = returns['PORTFOLIO']
-            benchmark_returns = returns['BENCHMARK']
-    
-            # Get the mean daily risk-free rate
-            risk_free_rate = self.risk_free_rates['rate'].mean() / 100 / 252  # Convert to daily decimal rate
-    
-            # Calculate excess returns
-            excess_portfolio = portfolio_returns - risk_free_rate
-            excess_benchmark = benchmark_returns - risk_free_rate
-    
-            # Calculate beta using linear regression
-            reg = LinearRegression()
-            reg.fit(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
-            beta = reg.coef_[0] / 100  # Scale beta to be in decimal form if necessary
-            alpha = reg.intercept_ * 252  # Annualize alpha
-            r_squared = reg.score(excess_benchmark.values.reshape(-1, 1), excess_portfolio.values)
-    
-            # Calculate tracking error for different periods
-            today = pd.Timestamp.now().normalize()
-            periods = {
-                'weekly': today - pd.Timedelta(days=7),
-                'monthly': today - pd.Timedelta(days=30),
-                'fytd': fiscal_start_date
-            }
-            tracking_errors = {}
-            return_diff = portfolio_returns - benchmark_returns
-    
-            for period_name, start_date in periods.items():
-                period_mask = returns.index >= start_date
-                period_diff = return_diff[period_mask]
-    
-                if not period_diff.empty:
-                    # Annualize tracking error and ensure proper scaling
-                    tracking_errors[period_name] = period_diff.std() * np.sqrt(252)
-                else:
-                    tracking_errors[period_name] = None
-    
-            # Return all calculated metrics
-            return {
-                'alpha': alpha,
-                'beta': beta,  # Beta is now correctly scaled
-                'tracking_error': tracking_errors,
-                'r_squared': r_squared
-            }
-    
-        except Exception as e:
-            logging.error(f"Error calculating risk metrics: {str(e)}")
-            return {
-                'alpha': None,
-                'beta': None,
-                'tracking_error': {'weekly': None, 'monthly': None, 'fytd': None},
-                'r_squared': {'weekly': None, 'monthly': None, 'fytd': None}
-            }
-    
