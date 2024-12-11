@@ -330,27 +330,27 @@ def display_risk_metrics(risk_metrics: dict):
         # Create metrics data
         metrics_data = {
             'Metric': [
-                'Sharpe Ratio (FYTD)',
                 'CAPM Alpha (Annual)',
+                'Beta',
                 'Raw Alpha (Annual)',
-                'Rolling Beta',
                 'Tracking Error (FYTD)',
-                'Treynor Ratio (FYTD)'
+                'Sharpe Ratio (FYTD)',
+                'Beta-Adjusted Sharpe Ratio (FYTD)'
             ],
             'Value': [
-                risk_metrics.get("sharpe", {}).get("fytd", None),
                 risk_metrics.get("alpha", None),
-                risk_metrics.get("raw_alpha", None),
                 risk_metrics.get("beta", None),
+                risk_metrics.get("raw_alpha", None),
                 risk_metrics.get("tracking_error", {}).get("fytd", None),
-                risk_metrics.get("treynor", {}).get("fytd", None)
+                risk_metrics.get("sharpe", {}).get("fytd", None),
+                risk_metrics.get("treynor", {}).get("fytd", None)  # Renamed to Beta-Adjusted Sharpe
             ],
             'Description': [
-                'Risk-adjusted return metric measuring excess return per unit of risk using standard deviation.',
-                'Portfolio\'s excess return after adjusting for market risk premium and beta.',
-                'Simple excess return over risk-free rate without market adjustment.',
+                'CAPM alpha measures excess returns after adjusting for systematic risk (beta)',
                 'Measures portfolio sensitivity to market movements. Beta > 1 indicates higher market sensitivity.',
+                'Raw alpha is the unadjusted excess return over a benchmark',
                 'Measures how consistently the portfolio follows its benchmark. Lower values indicate closer benchmark tracking.',
+                'Risk-adjusted return metric measuring excess return per unit of risk using standard deviation.',
                 'Excess return per unit of systematic risk (beta).'
             ]
         }
@@ -366,7 +366,7 @@ def display_risk_metrics(risk_metrics: dict):
                 formatted_values.append(f'{value:+.2%}')  # Always show 2 decimal places for percentages
             elif 'Beta' in metric:
                 formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for Beta
-            elif 'Ratio' in metric:  # For Sharpe and Treynor ratios
+            elif 'Ratio' in metric:  # For Sharpe and Beta-Adjusted Sharpe ratios
                 formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for ratios
             else:
                 formatted_values.append(f'{value:.2f}')
@@ -416,6 +416,7 @@ def display_risk_metrics(risk_metrics: dict):
         st.error("An error occurred while displaying risk metrics.")
         if st.checkbox("Show detailed error message"):
             st.code(traceback.format_exc())
+
 def main():
     try:
         cached_db = init_database()
@@ -554,3 +555,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
