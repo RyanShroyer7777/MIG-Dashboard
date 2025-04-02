@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 import numpy as np
 import traceback
 from style import apply_custom_style, format_performance_table, format_holdings_table
+
 # Page configuration must be the first Streamlit command
 st.set_page_config(
     page_title="UO MIG Portfolio Analytics",
@@ -26,6 +27,7 @@ except ImportError as e:
     st.error(f"Failed to import required modules: {str(e)}")
     st.stop()
 
+
 def init_database():
     """Initialize database connection with error handling."""
     try:
@@ -36,10 +38,11 @@ def init_database():
             st.code(traceback.format_exc())
         return None
 
+
 def init_page(latest_date: pd.Timestamp):
     """Initialize the Streamlit page with custom styling."""
     st.markdown(apply_custom_style(), unsafe_allow_html=True)
-    
+
     # Header with logo
     col1, col2 = st.columns([5, 1])
     with col1:
@@ -50,9 +53,12 @@ def init_page(latest_date: pd.Timestamp):
         </div>
         """, unsafe_allow_html=True)
         # Add last updated timestamp below title - now only showing the date
-        st.markdown(f"<p style='color: #666; font-size: 0.9em; margin-top: -0.5em;'>Last Updated: {latest_date.strftime('%B %d, %Y')}</p>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p style='color: #666; font-size: 0.9em; margin-top: -0.5em;'>Last Updated: {latest_date.strftime('%B %d, %Y')}</p>",
+            unsafe_allow_html=True)
     with col2:
         st.image("uo_logo.jpg", width=80)
+
 
 def plot_cumulative_returns(data: pd.DataFrame):
     fig = go.Figure()
@@ -80,10 +86,11 @@ def plot_cumulative_returns(data: pd.DataFrame):
     )
     return fig
 
+
 def plot_portfolio_and_cash(balances: pd.DataFrame):
     balances['balance_date'] = pd.to_datetime(balances['balance_date'])
     balances = balances.sort_values('balance_date')
-    
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=balances['balance_date'],
@@ -119,12 +126,13 @@ def plot_portfolio_and_cash(balances: pd.DataFrame):
     )
     return fig
 
+
 def create_allocation_chart(holdings: pd.DataFrame, prices: pd.DataFrame, cash_balance: float):
     """Create enhanced allocation pie chart with more space."""
     allocation = calculate_portfolio_allocation(holdings, prices, cash_balance)
-    colors = ['#2E75B6', '#70AD47', '#4472C4', '#ED7D31', '#5B9BD5', 
+    colors = ['#2E75B6', '#70AD47', '#4472C4', '#ED7D31', '#5B9BD5',
               '#A5A5A5', '#FFC000', '#9E480E', '#997300', '#43682B']
-    
+
     fig = go.Figure(data=[go.Pie(
         labels=allocation['stock_symbol'],
         values=allocation['market_value'],
@@ -135,42 +143,48 @@ def create_allocation_chart(holdings: pd.DataFrame, prices: pd.DataFrame, cash_b
         textfont_size=12,
         hovertemplate="<b>%{label}</b><br>Value: $%{value:,.2f}<br>Percentage: %{percent}<extra></extra>"
     )])
-    
+
     fig.update_layout(
         height=400,  # Increased height
         margin=dict(
-            l=80,    # Left margin
-            r=80,    # Right margin
-            t=40,    # Top margin
-            b=120     # Increased bottom margin
+            l=80,  # Left margin
+            r=80,  # Right margin
+            t=40,  # Top margin
+            b=120  # Increased bottom margin
         ),
         showlegend=False,
         autosize=True,
         paper_bgcolor='rgba(0,0,0,0)',  # Transparent background
         uniformtext=dict(mode='hide', minsize=12)  # Ensure consistent text size
     )
-    
+
     return fig
+
+
 def display_holdings_table(holdings: pd.DataFrame, returns: pd.DataFrame, prices: pd.DataFrame):
     merged_data = holdings.merge(
-        prices[['stock_symbol', 'current_price']], 
-        on='stock_symbol', 
+        prices[['stock_symbol', 'current_price']],
+        on='stock_symbol',
         how='left'
     )
-    
-    merged_data['market_value'] = merged_data['shares_held'] * merged_data['current_price']
+
+    # Use 'shares' if available, otherwise 'shares_held'
+    shares_col = 'shares' if 'shares' in holdings.columns else 'shares_held'
+
+    # Calculate market value using current price (don't use DB market_value)
+    merged_data['market_value'] = merged_data[shares_col] * merged_data['current_price']
     total_value = merged_data['market_value'].sum()
     merged_data['weight'] = merged_data['market_value'] / total_value
-    
+
     merged_data = merged_data.merge(
-        returns[['stock_symbol', 'weekly_return', 'monthly_return', 'fytd_return']], 
-        on='stock_symbol', 
+        returns[['stock_symbol', 'weekly_return', 'monthly_return', 'fytd_return']],
+        on='stock_symbol',
         how='left'
     )
-    
+
     display_data = pd.DataFrame({
         'Symbol': merged_data['stock_symbol'],
-        'Shares': merged_data['shares_held'],
+        'Shares': merged_data[shares_col],
         'Price': merged_data['current_price'],
         'Market Value': merged_data['market_value'],
         'Weight': merged_data['weight'],
@@ -178,7 +192,7 @@ def display_holdings_table(holdings: pd.DataFrame, returns: pd.DataFrame, prices
         'Monthly Return': merged_data['monthly_return'],
         'FYTD Return': merged_data['fytd_return']
     })
-    
+
     styled_df = display_data.style.format({
         'Shares': '{:,.0f}',
         'Price': '${:,.2f}',
@@ -201,14 +215,15 @@ def display_holdings_table(holdings: pd.DataFrame, returns: pd.DataFrame, prices
             ('border-bottom', '3px solid #FEE123')
         ]
     }])
-    
+
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
 
 def display_top_bottom_performers(returns: pd.DataFrame):
     """
     Display top and bottom performing stocks with period selection.
     Bottom performers are sorted with worst performers (most negative returns) at the top.
-    
+
     Args:
         returns (pd.DataFrame): DataFrame containing return data with columns:
             - stock_symbol
@@ -223,7 +238,7 @@ def display_top_bottom_performers(returns: pd.DataFrame):
         horizontal=True,
         key="performers_period_selector"
     )
-    
+
     # Map selected period to column name
     metric_map = {
         "Weekly": "weekly_return",
@@ -231,27 +246,27 @@ def display_top_bottom_performers(returns: pd.DataFrame):
         "FYTD": "fytd_return"
     }
     metric = metric_map[period]
-    
+
     # Make sure we're working with numeric values
     returns[metric] = pd.to_numeric(returns[metric], errors='coerce')
-    
+
     # Sort the returns - descending for top performers, ascending for bottom performers
     top_performers = returns.nlargest(5, metric)
-    bottom_performers = returns.nsmallest(5, metric)  # Changed from tail(5) to nsmallest(5)
-    
+    bottom_performers = returns.nsmallest(5, metric)
+
     # Create display dataframes
     top_df = top_performers[['stock_symbol', metric]].copy()
     bottom_df = bottom_performers[['stock_symbol', metric]].copy()
-    
+
     # Rename columns
     column_rename = {
         'stock_symbol': 'Symbol',
         metric: f'{period} Return'
     }
-    
+
     top_df.rename(columns=column_rename, inplace=True)
     bottom_df.rename(columns=column_rename, inplace=True)
-    
+
     # Style the dataframes
     def style_dataframe(df):
         return df.style.format({
@@ -270,14 +285,14 @@ def display_top_bottom_performers(returns: pd.DataFrame):
                 ('border-bottom', '3px solid #FEE123')
             ]
         }])
-    
+
     # Apply styling
     top_styled = style_dataframe(top_df)
     bottom_styled = style_dataframe(bottom_df)
-    
+
     # Create two columns for display
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.markdown(f"### Top 5 {period} Performers")
         st.dataframe(
@@ -285,7 +300,7 @@ def display_top_bottom_performers(returns: pd.DataFrame):
             use_container_width=True,
             hide_index=True
         )
-    
+
     with col2:
         st.markdown(f"### Bottom 5 {period} Performers")
         st.dataframe(
@@ -293,13 +308,19 @@ def display_top_bottom_performers(returns: pd.DataFrame):
             use_container_width=True,
             hide_index=True
         )
-        
-        
+
+
 def display_metrics(processor, balances, returns_data):
-    """Display enhanced metric cards."""
+    """Display enhanced metric cards with FYTD fallback if 'PORTFOLIO' is missing."""
     latest_total = balances['total_portfolio_value'].iloc[-1]
     current_cash = processor.cash_balance
-    ytd_return = returns_data['fytd']['PORTFOLIO'].iloc[-1] * 100
+
+    # Handle missing 'PORTFOLIO' FYTD data
+    if 'PORTFOLIO' in returns_data['fytd'].columns:
+        ytd_return = returns_data['fytd']['PORTFOLIO'].iloc[-1] * 100
+    else:
+        st.warning("No FYTD data for 'PORTFOLIO'. Check your daily_returns data.")
+        ytd_return = 0
 
     st.markdown(f"""
     <div class="metric-container">
@@ -319,10 +340,12 @@ def display_metrics(processor, balances, returns_data):
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+
 def display_risk_metrics(risk_metrics: dict):
     """
     Display risk metrics in a clean table format with descriptions.
-    
+
     Args:
         risk_metrics (dict): Dictionary containing risk metrics
     """
@@ -330,49 +353,49 @@ def display_risk_metrics(risk_metrics: dict):
         # Create metrics data
         metrics_data = {
             'Metric': [
-                'CAPM Alpha (Annual)',
-                'Beta',
-                'Raw Alpha (Annual)',
-                'Tracking Error (FYTD)',
                 'Sharpe Ratio (FYTD)',
-                'Beta-Adjusted Sharpe Ratio (FYTD)'
+                'Market-Adjusted Alpha (Annual)',
+                'Raw Alpha (Annual)',
+                'Rolling Beta',
+                'Tracking Error (FYTD)',
+                'Treynor Ratio (FYTD)'
             ],
             'Value': [
-                risk_metrics.get("alpha", None),
-                risk_metrics.get("beta", None),
-                risk_metrics.get("raw_alpha", None),
-                risk_metrics.get("tracking_error", {}).get("fytd", None),
                 risk_metrics.get("sharpe", {}).get("fytd", None),
-                risk_metrics.get("treynor", {}).get("fytd", None)  # Renamed to Beta-Adjusted Sharpe
+                risk_metrics.get("alpha", None),
+                risk_metrics.get("raw_alpha", None),
+                risk_metrics.get("beta", None),
+                risk_metrics.get("tracking_error", {}).get("fytd", None),
+                risk_metrics.get("treynor", {}).get("fytd", None)
             ],
             'Description': [
-                'CAPM alpha measures excess returns after adjusting for systematic risk (beta)',
-                'Measures portfolio sensitivity to market movements. Beta > 1 indicates higher market sensitivity.',
-                'Raw alpha is the unadjusted excess return over a benchmark',
-                'Measures how consistently the portfolio follows its benchmark. Lower values indicate closer benchmark tracking.',
                 'Risk-adjusted return metric measuring excess return per unit of risk using standard deviation.',
+                'Portfolio\'s excess return after adjusting for market risk premium and beta.',
+                'Simple excess return over risk-free rate without market adjustment.',
+                'Measures portfolio sensitivity to market movements. Beta > 1 indicates higher market sensitivity.',
+                'Measures how consistently the portfolio follows its benchmark. Lower values indicate closer benchmark tracking.',
                 'Excess return per unit of systematic risk (beta).'
             ]
         }
-        
+
         df = pd.DataFrame(metrics_data)
-        
+
         # Format the values with consistent decimal places
         formatted_values = []
         for metric, value in zip(df['Metric'], df['Value']):
             if value is None:
                 formatted_values.append('N/A')
             elif 'Alpha' in metric or 'Tracking Error' in metric:
-                formatted_values.append(f'{value:+.2%}')  # Always show 2 decimal places for percentages
+                formatted_values.append(f'{value:+.2%}')
             elif 'Beta' in metric:
-                formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for Beta
-            elif 'Ratio' in metric:  # For Sharpe and Beta-Adjusted Sharpe ratios
-                formatted_values.append(f'{value:.2f}')  # Always show 2 decimal places for ratios
+                formatted_values.append(f'{value:.2f}')
+            elif 'Ratio' in metric:
+                formatted_values.append(f'{value:.2f}')
             else:
                 formatted_values.append(f'{value:.2f}')
-        
+
         df['Value'] = formatted_values
-        
+
         # Create styled table
         styled_df = df.style.set_table_styles([
             {
@@ -394,47 +417,48 @@ def display_risk_metrics(risk_metrics: dict):
                 ]
             },
             {
-                'selector': 'td:nth-child(2)',  # Style the Value column
+                'selector': 'td:nth-child(2)',
                 'props': [
                     ('text-align', 'center'),
-                    ('font-family', 'monospace')  # For better alignment of numbers
+                    ('font-family', 'monospace')
                 ]
             }
         ]).apply(lambda x: [
-            'background-color: #f8f9fa' if i % 2 == 0 else '' 
+            'background-color: #f8f9fa' if i % 2 == 0 else ''
             for i in range(len(x))
         ], axis=0)
-        
-        # Display the styled table
+
         st.dataframe(
             styled_df,
             use_container_width=True,
             hide_index=True
         )
-        
+
     except Exception as e:
         st.error("An error occurred while displaying risk metrics.")
         if st.checkbox("Show detailed error message"):
             st.code(traceback.format_exc())
+
 
 def main():
     try:
         cached_db = init_database()
         if cached_db is None:
             return
-        
+
         fiscal_start_date = date(2024, 3, 29)
         today = date.today()
 
         with st.spinner("Loading portfolio data..."):
-            processor = cached_db.create_processor(fiscal_start_date, today, fund_id=DEFAULT_FUND_ID)
+            # Changed parameter from fund_id to fund
+            processor = cached_db.create_processor(fiscal_start_date, today, fund=DEFAULT_FUND_ID)
             if processor is None:
                 st.error("Failed to initialize data processor.")
                 return
-                
+
             # Get latest date from processor
             latest_date = processor.daily_returns['return_date'].max()
-            
+
             # Initialize page with latest date
             init_page(latest_date)
 
@@ -445,8 +469,8 @@ def main():
             prices = processor.stock_prices
             equity_returns = processor.calculate_equity_returns(fiscal_start_date)
             balances = cached_db.get_balances(
-                DEFAULT_FUND_ID, 
-                fiscal_start_date.strftime('%Y-%m-%d'), 
+                DEFAULT_FUND_ID,
+                fiscal_start_date.strftime('%Y-%m-%d'),
                 today.strftime('%Y-%m-%d')
             )
 
@@ -465,19 +489,19 @@ def main():
         # Horizontal split for main charts (2:1 ratio)
         st.markdown("### Portfolio Overview")
         col1, col2 = st.columns([2, 1])
-        
+
         with col1:
             st.markdown("#### Cumulative Returns")
             st.plotly_chart(
-                plot_cumulative_returns(returns_data[period.lower()]), 
+                plot_cumulative_returns(returns_data[period.lower()]),
                 use_container_width=True,
                 key="main_returns_chart"
             )
-            
+
         with col2:
             st.markdown("#### Total Portfolio Value & Cash Balance")
             st.plotly_chart(
-                plot_portfolio_and_cash(balances), 
+                plot_portfolio_and_cash(balances),
                 use_container_width=True,
                 key="main_cash_chart"
             )
@@ -485,20 +509,20 @@ def main():
         # Tabs for the rest of the content
         tabs = st.tabs(["Performance", "Holdings", "Risk Analysis"])
 
-        #Holdings tab 
+        # Holdings tab
         with tabs[1]:
             col3, col4 = st.columns([1, 2])
             with col3:
                 st.markdown("### Portfolio Allocation")
                 st.plotly_chart(
-                    create_allocation_chart(holdings, prices, processor.cash_balance), 
+                    create_allocation_chart(holdings, prices, processor.cash_balance),
                     use_container_width=True,
                     key="allocation_pie_chart"
                 )
             with col4:
                 st.markdown("### Holdings Detail")
                 display_holdings_table(holdings, equity_returns, prices)
-            
+
             # Performance Analysis section with new switchable display
             st.markdown("### Performance Analysis")
             display_top_bottom_performers(equity_returns)
@@ -515,8 +539,7 @@ def main():
                     for p in ['weekly', 'monthly', 'fytd']
                 ]
             })
-            
-            # Apply color formatting to all numeric columns
+
             st.dataframe(
                 perf_data.style.format({
                     'Portfolio': '{:+.2%}',
@@ -534,18 +557,15 @@ def main():
         # Risk Analysis Tab
         with tabs[2]:
             st.markdown("### Risk Metrics Overview")
-            
-            # Get all risk metrics
+
             risk_metrics = processor.calculate_risk_metrics(fiscal_start_date)
             sharpe_metrics = processor.calculate_sharpe_ratio(fiscal_start_date)
-            
-            # Combine all metrics
+
             combined_metrics = {
                 **risk_metrics,
                 **sharpe_metrics
             }
-            
-            # Display risk metrics using the updated function - remove latest_date parameter
+
             display_risk_metrics(combined_metrics)
 
     except Exception as e:
@@ -553,6 +573,6 @@ def main():
         if st.checkbox("Show detailed error message"):
             st.code(traceback.format_exc())
 
+
 if __name__ == "__main__":
     main()
-
