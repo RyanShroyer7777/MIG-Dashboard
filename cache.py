@@ -24,6 +24,18 @@ def get_combined_returns(_db: DatabaseInterface, start_date: date, end_date: dat
     return _db.combine_portfolio_benchmark_returns(portfolio_returns, benchmark_returns)
 
 @st.cache_data(ttl=CacheConfig.DB_CACHE_TTL)
+def check_data_availability(_db: DatabaseInterface, start_date: date, end_date: date, fund: str = "DADCO") -> tuple:
+    """
+    Check if sufficient data is available for the specified date range.
+    Returns (boolean, count) indicating if enough data is available and how many days.
+    """
+    portfolio_returns = _db.get_portfolio_returns(start_date, end_date, fund)
+    unique_days = len(portfolio_returns.drop_duplicates(subset=['return_date']))
+    # Consider enough data as at least 60 trading days
+    return (unique_days >= 60, unique_days)
+
+
+@st.cache_data(ttl=CacheConfig.DB_CACHE_TTL)
 def get_stock_daily_returns(_db: DatabaseInterface, start_date: date, end_date: date) -> pd.DataFrame:
     return _db.get_stock_daily_returns(start_date, end_date)
 
@@ -152,15 +164,28 @@ class CachedDatabaseInterface:
         if CacheConfig.LAST_PROCESSED_UPDATE not in st.session_state:
             st.session_state[CacheConfig.LAST_PROCESSED_UPDATE] = datetime.now()
 
-    def create_processor(self, start_date: date, end_date: date, fund: str = "DADCO") -> Optional[DataProcessor]:
+    def create_processor(self, fiscal_start_date: date, fiscal_end_date: date, fund: str = "DADCO") -> Optional[
+        DataProcessor]:
+        """
+        Create a data processor with extended data range to ensure enough data for risk metrics.
+        """
         try:
-            daily_returns = get_combined_returns(self.db, start_date, end_date, fund)
-            stock_daily_returns = get_stock_daily_returns(self.db, start_date, end_date)
+            # Default end date to today if not specified
+            end_date = fiscal_end_date if fiscal_end_date else datetime.now().date()
+
+            # Always load at least 12 months of data (enough for risk calculations)
+            extended_start_date = fiscal_start_date - timedelta(days=365)  # 12 months
+            logging.info(f"Loading extended data range: {extended_start_date} to {end_date}")
+
+            # Load data based on determined date range
+            daily_returns = get_combined_returns(self.db, extended_start_date, end_date, fund)
+            stock_daily_returns = get_stock_daily_returns(self.db, extended_start_date, end_date)
             holdings = get_holdings(self.db, fund)
-            risk_free_rates = get_risk_free_rates(self.db, start_date, end_date)
+            risk_free_rates = get_risk_free_rates(self.db, extended_start_date, end_date)
             stock_prices = get_stock_prices(self.db)
-            cash_balance = get_cash_balance(self.db, fund, start_date, end_date)
-            return DataProcessor(
+            cash_balance = get_cash_balance(self.db, fund, fiscal_start_date, end_date)
+
+            processor = DataProcessor(
                 daily_returns=daily_returns,
                 stock_daily_returns=stock_daily_returns,
                 holdings=holdings,
@@ -169,6 +194,13 @@ class CachedDatabaseInterface:
                 fund=fund,
                 cash_balance=cash_balance
             )
+
+            # Add fiscal year information for UI
+            processor.fiscal_start_date = fiscal_start_date
+            processor.fiscal_end_date = end_date
+
+            return processor
+
         except Exception as e:
             st.error(f"Error creating processor: {str(e)}")
             st.code(traceback.format_exc())
@@ -194,3 +226,19 @@ class CachedDatabaseInterface:
             'next_processed_update': st.session_state[CacheConfig.LAST_PROCESSED_UPDATE] + timedelta(seconds=CacheConfig.PROCESSED_CACHE_TTL)
         }
 
+    def get_latest_return_date(self) -> Optional[date]:
+        try:
+            returns = self.db.get_portfolio_returns(
+                start_date=date(2000, 1, 1),
+                end_date=date.today(),
+                fund="DADCO"
+            )
+            if not returns.empty:
+                latest = returns['return_date'].max()
+                return latest
+            else:
+                st.warning("Portfolio returns query returned an empty DataFrame.")
+                return None
+        except Exception as e:
+            st.warning(f"Could not fetch latest return date: {e}")
+            return None
